@@ -1,0 +1,20 @@
+{
+    "host": {
+        "httpaddress": ":8080",
+        "httpaddressinternal": ":9090",
+        "grpcaddress": "localhost:6668"
+    },
+    "datastorage" : {
+        "credentials": {
+            "filename": "/home/gbodurov/identity-provider.db"
+        },
+    	"type": "sqlite"
+    },
+    "identitysource" : {
+        "credentials": {
+            "filename": "/home/gbodurov/identity-provider.db"
+        },
+        "datastoragetype": "sqlite",
+        "type": "data_storage"
+    }
+}
