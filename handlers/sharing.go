@@ -39,8 +39,9 @@ type EchangePublicKeysViaQRForm struct {
 }
 
 type TokenForm struct {
-	WalletIDToTokenMap map[string]string `json:"walletIdToTokenMap"`
-	LocalIps           []string          `json:"localIps"`
+	WalletIDToTokenMap map[string]string   `json:"walletIdToTokenMap"`
+	LocalIps           []string            `json:"localIps"`
+	RemoteIps          map[string][]string `json:"remoteIps"`
 }
 
 func (e *EchangePublicKeysViaQRForm) InputValidation() error {
@@ -190,7 +191,10 @@ func saveRemoteIP(ip string, id string) error {
 func saveLocalIP(ip string, id string) error {
 	dataStorage := component.CreateDataStorage()
 
-	return dataStorage.SetKey(component.IP_TABLE_LOCAL, id+"/"+ip, ip, config.TokenTTL*time.Second)
+	cleanedIP := strings.ReplaceAll(ip, "https://", "")
+	cleanedIP = strings.ReplaceAll(cleanedIP, "http://", "")
+
+	return dataStorage.SetKey(component.IP_TABLE_LOCAL, id+"/"+cleanedIP, cleanedIP, config.TokenTTL*time.Second)
 }
 
 func SaveTokens(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +221,19 @@ func SaveTokens(w http.ResponseWriter, r *http.Request) {
 	//log.Printf(ipPort)
 
 	ipPortSplit := strings.Split(ipPort, ":")
-	ip := ipPortSplit[0]
+
+	ip := ""
+
+	for i := 0; i < len(ipPortSplit)-1; i++ {
+		ip = ip + ipPortSplit[i]
+
+		if i < len(ipPortSplit)-2 {
+			ip = ip + ":"
+		}
+	}
+
+	log.Println("Storing ip: " + ip)
+
 	saveRemoteIP(ip, generatorID)
 
 	tokenForm := &TokenForm{}
@@ -230,9 +246,19 @@ func SaveTokens(w http.ResponseWriter, r *http.Request) {
 
 	walletIDToTokenMap := tokenForm.WalletIDToTokenMap
 	localIps := tokenForm.LocalIps
+	remoteIps := tokenForm.RemoteIps
+
+	for walletID, ips := range remoteIps {
+		for _, ip := range ips {
+			log.Println("Remote ip: " + walletID + " " + ip)
+
+			saveRemoteIP(ip, walletID)
+		}
+	}
 
 	for _, ip := range localIps {
-		//log.Println("Ips: " + generatorID + " " + ip)
+		log.Println("Local ip: " + generatorID + " " + ip)
+
 		saveLocalIP(ip, generatorID)
 	}
 

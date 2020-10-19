@@ -181,26 +181,28 @@ func RegisterPublicKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if notification.IsEmail(form.Identificator) == true {
-		fmt.Println("Sending email")
+	if config.SendConfirmationCode == true {
+		if notification.IsEmail(form.Identificator) == true {
+			fmt.Println("Sending email")
 
-		_, err := notification.SendSMTPEmail(form.Identificator, "Confirmation code", confirmationCode, config.SupportEmail,
-			config.SMTPHost, config.SMTPPort, config.SMTPUsername, config.SMTPPassword)
+			_, err := notification.SendSMTPEmail(form.Identificator, "Confirmation code", confirmationCode, config.SupportEmail,
+				config.SMTPHost, config.SMTPPort, config.SMTPUsername, config.SMTPPassword)
 
-		if err != nil {
-			fmt.Println(err.Error())
-			jsonutils.EncodeResponse("400", "Can not send email", err.Error(), w)
-			return
-		}
-	} else {
-		fmt.Println("Sending sms")
+			if err != nil {
+				fmt.Println(err.Error())
+				jsonutils.EncodeResponse("400", "Can not send email", err.Error(), w)
+				return
+			}
+		} else {
+			fmt.Println("Sending sms")
 
-		_, err := notification.SendSMS(form.Identificator, confirmationCode, config.TwilioAccount, config.TwilioSecret, config.TwilioPhone)
+			_, err := notification.SendSMS(form.Identificator, confirmationCode, config.TwilioAccount, config.TwilioSecret, config.TwilioPhone)
 
-		if err != nil {
-			fmt.Println(err.Error())
-			jsonutils.EncodeResponse("400", "Can not send sms", err.Error(), w)
-			return
+			if err != nil {
+				fmt.Println(err.Error())
+				jsonutils.EncodeResponse("400", "Can not send sms", err.Error(), w)
+				return
+			}
 		}
 	}
 

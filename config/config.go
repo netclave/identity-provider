@@ -52,9 +52,10 @@ var ListenHTTPAddress = "localhost:8080"
 var ListenGRPCAddress = "localhost:6668"
 
 var TokenTTL = time.Duration(300)
+var SendConfirmationCode = false
 
 func Init() error {
-	flag.String("configFile", "~/config.json", "Provide full path to your config json file")
+	flag.String("configFile", "/opt/config.json", "Provide full path to your config json file")
 
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 	pflag.Parse()
@@ -106,6 +107,8 @@ func Init() error {
 	viper.SetDefault("twilio.secret", "")
 	viper.SetDefault("twilio.phone", "")
 
+	viper.SetDefault("sendconfirmationcode", false)
+
 	hostConfig := viper.Sub("host")
 
 	ListenHTTPAddress = hostConfig.GetString("httpaddress")
@@ -142,6 +145,8 @@ func Init() error {
 	TwilioAccount = twilioConfig.GetString("account")
 	TwilioSecret = twilioConfig.GetString("secret")
 	TwilioPhone = twilioConfig.GetString("phone")
+
+	SendConfirmationCode = viper.GetBool("sendconfirmationcode")
 
 	return nil
 }

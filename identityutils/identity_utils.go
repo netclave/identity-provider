@@ -85,6 +85,32 @@ func GetActiveIpsForIdentityID(userID string, local bool) ([]string, error) {
 				//fmt.Println("ip: " + ip)
 			}
 		}
+
+		suffix := component.IP_TABLE
+
+		if local == true {
+			suffix = component.IP_TABLE_LOCAL
+		}
+
+		ipKeys, err := dataStorage.GetKeys(suffix, identificatorID+"/*")
+
+		if err != nil {
+			return nil, err
+		}
+
+		for _, ipKey := range ipKeys {
+			ipTokens := strings.Split(ipKey, "/")
+			ip := ipTokens[2]
+
+			_, ok := cached[ip]
+
+			if ok == false {
+				cached[ip] = true
+				result = append(result, ip)
+			}
+
+			//fmt.Println("ip: " + ip)
+		}
 	}
 
 	return result, nil

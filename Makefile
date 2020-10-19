@@ -1,5 +1,19 @@
-SERVER_OUT := "bin/server"
-CLIENT_OUT := "bin/client"
+GIT_BRANCH=$(shell git rev-parse --abbrev-ref HEAD)
+TARGETOS := $(if $(TARGETOS),$(TARGETOS),linux)
+TARGETARCH := $(if $(TARGETARCH),$(TARGETARCH),amd64)
+TARGETGOARM := $(if $(TARGETGOARM),$(TARGETGOARM),)
+BRANCH := $(if $(BRANCH),$(BRANCH),${GIT_BRANCH})
+GOPRIVATE := $(if $(GOPRIVATE),$(GOPRIVATE),"github.com")
+DEFAULT_COMPILER := ""
+VAR_CGO_ENABLED := $(if $(COMPILER),1,0)
+COMPILER := $(if $(COMPILER),"$(COMPILER)",${DEFAULT_COMPILER})
+
+export GOOS=$(TARGETOS)
+export GOARCH=$(TARGETARCH)
+export GOARM=$(TARGETGOARM)
+
+SERVER_OUT := "bin/server-${TARGETOS}-${TARGETARCH}"
+CLIENT_OUT := "bin/client-${TARGETOS}-${TARGETARCH}"
 PKG := "github.com/netclave/identity-provider"
 SERVER_PKG_BUILD := "${PKG}/server"
 CLIENT_PKG_BUILD := "${PKG}/client"
@@ -10,13 +24,16 @@ PKG_LIST := $(shell go list ${PKG}/... | grep -v /vendor/)
 all: server client
 
 dep: ## Get the dependencies
-	@go get -v -d ./...
+	@GOPRIVATE=$(GOPRIVATE) go get -v -d ./...
+	-GOPRIVATE=$(GOPRIVATE) go get github.com/netclave/apis@${BRANCH}
+	-GOPRIVATE=$(GOPRIVATE) go get github.com/netclave/common@${BRANCH}
+
 
 server: dep ## Build the binary file for server
-	@go build -i -v -o $(SERVER_OUT) $(SERVER_PKG_BUILD)
+	GOPRIVATE=$(GOPRIVATE) CGO_ENABLED=$(VAR_CGO_ENABLED) CC=${COMPILER} go build -ldflags '-s' -i -v -o $(SERVER_OUT) $(SERVER_PKG_BUILD)
 
 client: dep ## Build the binary file for client
-	@go build -i -v -o $(CLIENT_OUT) $(CLIENT_PKG_BUILD)
+	@GOPRIVATE=$(GOPRIVATE) CGO_ENABLED=$(VAR_CGO_ENABLED) CC=${COMPILER} go build -ldflags '-s' -i -v -o $(CLIENT_OUT) $(CLIENT_PKG_BUILD)
 
 clean: ## Remove previous builds
 	@rm $(SERVER_OUT) $(CLIENT_OUT)
