@@ -27,7 +27,9 @@ import (
 
 	"github.com/netclave/common/cryptoutils"
 	"github.com/netclave/common/jsonutils"
+	"github.com/netclave/common/networkutils"
 	"github.com/netclave/common/notification"
+	"github.com/netclave/common/utils"
 	"github.com/netclave/identity-provider/component"
 	"github.com/netclave/identity-provider/config"
 )
@@ -63,12 +65,19 @@ func (e *RegisterPublicKeyForm) InputValidation() error {
 }
 
 func RegisterPublicKey(w http.ResponseWriter, r *http.Request) {
+	fail2banDataStorage := component.CreateFail2BanDataStorage()
+
+	fail2BanData := &utils.Fail2BanData{
+		DataStorage:   fail2banDataStorage,
+		RemoteAddress: networkutils.GetRemoteAddress(r),
+		TTL:           config.Fail2BanTTL,
+	}
 
 	request, err := jsonutils.ParseRequest(r)
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not read body", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not read body", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -78,7 +87,7 @@ func RegisterPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not verify request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not verify request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -88,7 +97,7 @@ func RegisterPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Request missing args", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Request missing args", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -96,7 +105,7 @@ func RegisterPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Request missing args", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Request missing args", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -104,7 +113,7 @@ func RegisterPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Error creating identity provider", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Error creating identity provider", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -112,13 +121,13 @@ func RegisterPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Error while getting identificator", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Error while getting identificator", err.Error(), w, fail2BanData)
 		return
 	}
 
 	if len(result) <= 0 {
 		fmt.Println("Can not find identificator in identity provider")
-		jsonutils.EncodeResponse("400", "Can not find identificator", "", w)
+		jsonutils.EncodeResponse("400", "Can not find identificator", "", w, fail2BanData)
 		return
 	}
 
@@ -128,13 +137,13 @@ func RegisterPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not get previous ldap id for identificator", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not get previous id for identificator", err.Error(), w, fail2BanData)
 		return
 	}
 
 	if previousIdentityID != "" && previousIdentityID != identityID {
-		fmt.Println("Identificator already bound to different ldap id")
-		jsonutils.EncodeResponse("400", "Identificator already bound to different ldap id", "Identificator already bound to different ldap id", w)
+		fmt.Println("Identificator already bound to different id")
+		jsonutils.EncodeResponse("400", "Identificator already bound to different ldap id", "Identificator already bound to different id", w, fail2BanData)
 		return
 	}
 
@@ -142,7 +151,7 @@ func RegisterPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not generate confirmation code", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not generate confirmation code", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -155,13 +164,13 @@ func RegisterPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not store confirmation code", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not store confirmation code", err.Error(), w, fail2BanData)
 		return
 	}
 
 	if request.PublicKey == "" {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "No public key", err.Error(), w)
+		jsonutils.EncodeResponse("400", "No public key", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -169,7 +178,7 @@ func RegisterPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not store temp public key", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not store temp public key", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -177,7 +186,7 @@ func RegisterPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not store ldap id for identificator", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not store ldap id for identificator", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -190,7 +199,7 @@ func RegisterPublicKey(w http.ResponseWriter, r *http.Request) {
 
 			if err != nil {
 				fmt.Println(err.Error())
-				jsonutils.EncodeResponse("400", "Can not send email", err.Error(), w)
+				jsonutils.EncodeResponse("400", "Can not send email", err.Error(), w, fail2BanData)
 				return
 			}
 		} else {
@@ -200,7 +209,7 @@ func RegisterPublicKey(w http.ResponseWriter, r *http.Request) {
 
 			if err != nil {
 				fmt.Println(err.Error())
-				jsonutils.EncodeResponse("400", "Can not send sms", err.Error(), w)
+				jsonutils.EncodeResponse("400", "Can not send sms", err.Error(), w, fail2BanData)
 				return
 			}
 		}
@@ -215,11 +224,11 @@ func RegisterPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not encrypt request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not encrypt request", err.Error(), w, fail2BanData)
 		return
 	}
 
-	jsonutils.EncodeResponse("200", "OK", signedResponse, w)
+	jsonutils.EncodeResponse("200", "OK", signedResponse, w, fail2BanData)
 }
 
 type ConfirmPublicKeyForm struct {
@@ -248,11 +257,19 @@ func (e *ConfirmPublicKeyForm) InputValidation() error {
 }
 
 func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
+	fail2banDataStorage := component.CreateFail2BanDataStorage()
+
+	fail2BanData := &utils.Fail2BanData{
+		DataStorage:   fail2banDataStorage,
+		RemoteAddress: networkutils.GetRemoteAddress(r),
+		TTL:           config.Fail2BanTTL,
+	}
+
 	request, err := jsonutils.ParseRequest(r)
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not read body", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not read body", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -262,7 +279,7 @@ func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not verify request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not verify request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -270,7 +287,7 @@ func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil || identityID == "" {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not get ldap id", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not get ldap id", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -280,7 +297,7 @@ func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not decode form", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not decode form", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -288,7 +305,7 @@ func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Request missing args", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Request missing args", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -301,13 +318,13 @@ func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Request missing args", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Request missing args", err.Error(), w, fail2BanData)
 		return
 	}
 
 	if confirmationCode != codeInDb {
 		fmt.Println("Code no match")
-		jsonutils.EncodeResponse("400", "Code no match", "Code no match", w)
+		jsonutils.EncodeResponse("400", "Code no match", "Code no match", w, fail2BanData)
 		return
 	}
 
@@ -315,7 +332,7 @@ func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not get temp public key", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not get temp public key", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -323,7 +340,7 @@ func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not get store public key", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not get store public key", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -331,7 +348,7 @@ func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not delete temp public key", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not delete temp public key", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -339,7 +356,7 @@ func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not store ldap id for identificator", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not store id for identificator", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -347,7 +364,7 @@ func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not store identificator for ldap id", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not store identificator for id", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -355,7 +372,7 @@ func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not delete temp ldap id for identificator", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not delete temp id for identificator", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -368,7 +385,7 @@ func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not add identificator", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not add identificator", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -376,7 +393,7 @@ func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not connect identity provider identificator to identificator", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not connect identity provider identificator to identificator", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -384,7 +401,7 @@ func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not connect identificator to identity provider identificator", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not connect identificator to identity provider identificator", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -397,11 +414,11 @@ func ConfirmPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not encrypt request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not encrypt request", err.Error(), w, fail2BanData)
 		return
 	}
 
-	jsonutils.EncodeResponse("200", "OK", signedResponse, w)
+	jsonutils.EncodeResponse("200", "OK", signedResponse, w, fail2BanData)
 }
 
 type DeletePublicKeyForm struct {
@@ -412,11 +429,19 @@ func (e *DeletePublicKeyForm) InputValidation() error {
 }
 
 func DeletePublicKey(w http.ResponseWriter, r *http.Request) {
+	fail2banDataStorage := component.CreateFail2BanDataStorage()
+
+	fail2BanData := &utils.Fail2BanData{
+		DataStorage:   fail2banDataStorage,
+		RemoteAddress: networkutils.GetRemoteAddress(r),
+		TTL:           config.Fail2BanTTL,
+	}
+
 	request, err := jsonutils.ParseRequest(r)
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not read body", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not read body", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -426,7 +451,7 @@ func DeletePublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not verify request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not verify request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -434,7 +459,7 @@ func DeletePublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not get identificators", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not get identificators", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -444,7 +469,7 @@ func DeletePublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not get generators", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not get generators", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -454,7 +479,7 @@ func DeletePublicKey(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			fmt.Println(err.Error())
-			jsonutils.EncodeResponse("400", "Can not delete relation", err.Error(), w)
+			jsonutils.EncodeResponse("400", "Can not delete relation", err.Error(), w, fail2BanData)
 			return
 		}
 
@@ -462,7 +487,7 @@ func DeletePublicKey(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			fmt.Println(err.Error())
-			jsonutils.EncodeResponse("400", "Can not delete relation", err.Error(), w)
+			jsonutils.EncodeResponse("400", "Can not delete relation", err.Error(), w, fail2BanData)
 			return
 		}
 	}
@@ -471,7 +496,7 @@ func DeletePublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not delete relation", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not delete relation", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -479,7 +504,7 @@ func DeletePublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not delete relation", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not delete relation", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -487,7 +512,7 @@ func DeletePublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil || identityID == "" {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not get ldap id", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not get ldap id", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -495,7 +520,7 @@ func DeletePublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not delete identificator for ldap", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not delete identificator for ldap", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -503,7 +528,7 @@ func DeletePublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not delete ldap id", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not delete ldap id", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -511,7 +536,7 @@ func DeletePublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can no retrieve delete public key", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can no retrieve delete public key", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -519,7 +544,7 @@ func DeletePublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not delete public key id", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not delete public key id", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -527,7 +552,7 @@ func DeletePublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not delete identificator", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not delete identificator", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -540,9 +565,9 @@ func DeletePublicKey(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not encrypt request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not encrypt request", err.Error(), w, fail2BanData)
 		return
 	}
 
-	jsonutils.EncodeResponse("200", "OK", signedResponse, w)
+	jsonutils.EncodeResponse("200", "OK", signedResponse, w, fail2BanData)
 }

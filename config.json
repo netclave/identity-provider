@@ -16,5 +16,14 @@
         },
         "datastoragetype": "sqlite",
         "type": "data_storage"
+    },
+    
+    "generatorspolicy": "2fa",
+
+    "fail2bandatastorage" : {
+        "credentials": {
+            "filename": "/home/gbodurov/fail2ban.db"
+        },
+    	"type": "sqlite"
     }
 }

@@ -50,6 +50,12 @@ func LoadComponent() error {
 		return err
 	}
 
+	err = InitFail2BanDataStorage()
+
+	if err != nil {
+		return err
+	}
+
 	if config.IdentityProviderType == identity.DATA_STORAGE_PROVIDER {
 		err = InitIdentityStorage()
 
@@ -167,6 +173,24 @@ func InitDataStorage() error {
 	storage := &storage.GenericStorage{
 		Credentials: config.DataStorageCredentials,
 		StorageType: config.StorageType,
+	}
+
+	return storage.Init()
+}
+
+func CreateFail2BanDataStorage() *storage.GenericStorage {
+	storage := &storage.GenericStorage{
+		Credentials: config.Fail2BanDataStorageCredentials,
+		StorageType: config.Fail2BanStorageType,
+	}
+
+	return storage
+}
+
+func InitFail2BanDataStorage() error {
+	storage := &storage.GenericStorage{
+		Credentials: config.Fail2BanDataStorageCredentials,
+		StorageType: config.Fail2BanStorageType,
 	}
 
 	return storage.Init()

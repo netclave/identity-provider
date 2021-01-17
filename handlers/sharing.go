@@ -27,6 +27,8 @@ import (
 
 	"github.com/netclave/common/cryptoutils"
 	"github.com/netclave/common/jsonutils"
+	"github.com/netclave/common/networkutils"
+	"github.com/netclave/common/utils"
 	"github.com/netclave/identity-provider/component"
 	"github.com/netclave/identity-provider/config"
 	"github.com/netclave/identity-provider/identityutils"
@@ -85,10 +87,18 @@ func verifyQR(walletID, identityProviderID, signature string) error {
 }
 
 func ExchangePublicKeysViaQR(w http.ResponseWriter, r *http.Request) {
+	fail2banDataStorage := component.CreateFail2BanDataStorage()
+
+	fail2BanData := &utils.Fail2BanData{
+		DataStorage:   fail2banDataStorage,
+		RemoteAddress: networkutils.GetRemoteAddress(r),
+		TTL:           config.Fail2BanTTL,
+	}
+
 	request, err := jsonutils.ParseRequest(r)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -97,7 +107,7 @@ func ExchangePublicKeysViaQR(w http.ResponseWriter, r *http.Request) {
 	response, generatorID, err := jsonutils.VerifyAndDecrypt(request, component.ComponentPrivateKey, cryptoStorage)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -107,7 +117,7 @@ func ExchangePublicKeysViaQR(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Can not decode form", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not decode form", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -115,7 +125,7 @@ func ExchangePublicKeysViaQR(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Request missing args", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Request missing args", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -128,13 +138,13 @@ func ExchangePublicKeysViaQR(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err)
-		jsonutils.EncodeResponse("400", err.Error(), nil, w)
+		jsonutils.EncodeResponse("400", err.Error(), nil, w, fail2BanData)
 		return
 	}
 
 	if identityProviderID != componentIdentityProviderID {
 		log.Println("Wrong identity provider id")
-		jsonutils.EncodeResponse("400", "Wrong identity provider id", nil, w)
+		jsonutils.EncodeResponse("400", "Wrong identity provider id", nil, w, fail2BanData)
 		return
 	}
 
@@ -149,14 +159,14 @@ func ExchangePublicKeysViaQR(w http.ResponseWriter, r *http.Request) {
 	err = cryptoStorage.AddIdentificatorToIdentificator(generatorIdentificator, walletIdentificator)
 	if err != nil {
 		log.Println(err)
-		jsonutils.EncodeResponse("400", "Cannot add IdentificatorToIdentificator", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot add IdentificatorToIdentificator", err.Error(), w, fail2BanData)
 		return
 	}
 
 	err = cryptoStorage.AddIdentificatorToIdentificator(walletIdentificator, generatorIdentificator)
 	if err != nil {
 		log.Println(err)
-		jsonutils.EncodeResponse("400", "Cannot add IdentificatorToIdentificator", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot add IdentificatorToIdentificator", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -166,7 +176,7 @@ func ExchangePublicKeysViaQR(w http.ResponseWriter, r *http.Request) {
 	generatorPublicKey, err := cryptoStorage.RetrievePublicKey(generatorID)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Generator public key cannot be retrieved", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Generator public key cannot be retrieved", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -175,11 +185,11 @@ func ExchangePublicKeysViaQR(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot encrypt request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot encrypt request", err.Error(), w, fail2BanData)
 		return
 	}
 
-	jsonutils.EncodeResponse("200", "OK", signedResponse, w)
+	jsonutils.EncodeResponse("200", "OK", signedResponse, w, fail2BanData)
 }
 
 func saveRemoteIP(ip string, id string) error {
@@ -197,11 +207,39 @@ func saveLocalIP(ip string, id string) error {
 	return dataStorage.SetKey(component.IP_TABLE_LOCAL, id+"/"+cleanedIP, cleanedIP, config.TokenTTL*time.Second)
 }
 
+func saveTokensForWallet(ip string, walletIDToTokenMap map[string]string, walletIDGlobal string) error {
+	err := saveRemoteIP(ip, walletIDGlobal)
+
+	if err != nil {
+		return err
+	}
+
+	dataStorage := component.CreateDataStorage()
+
+	for walletID, token := range walletIDToTokenMap {
+		err = dataStorage.SetKey(component.TOKENS, walletID+"/"+walletIDGlobal+"/"+token, token, config.TokenTTL*time.Second)
+		if err != nil {
+			log.Println(err.Error())
+			return err
+		}
+	}
+
+	return nil
+}
+
 func SaveTokens(w http.ResponseWriter, r *http.Request) {
+	fail2banDataStorage := component.CreateFail2BanDataStorage()
+
+	fail2BanData := &utils.Fail2BanData{
+		DataStorage:   fail2banDataStorage,
+		RemoteAddress: networkutils.GetRemoteAddress(r),
+		TTL:           config.Fail2BanTTL,
+	}
+
 	request, err := jsonutils.ParseRequest(r)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -210,13 +248,13 @@ func SaveTokens(w http.ResponseWriter, r *http.Request) {
 	decryptedRequest, generatorID, err := jsonutils.VerifyAndDecrypt(request, component.ComponentPrivateKey, cryptoStorage)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w, fail2BanData)
 		return
 	}
 
 	log.Println("Saving tokens for: " + generatorID)
 
-	ipPort := r.RemoteAddr
+	ipPort := networkutils.GetRemoteAddress(r)
 
 	//log.Printf(ipPort)
 
@@ -232,21 +270,69 @@ func SaveTokens(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Println("Storing ip: " + ip)
+	wallets, err := cryptoStorage.GetIdentificatorToIdentificatorMap(component.IdentityProviderIdentificator, cryptoutils.IDENTIFICATOR_TYPE_WALLET)
 
-	saveRemoteIP(ip, generatorID)
+	if err != nil {
+		log.Println(err.Error())
+		jsonutils.EncodeResponse("400", "Cannot get generators", err.Error(), w, fail2BanData)
+		return
+	}
 
 	tokenForm := &TokenForm{}
 	err = json.Unmarshal([]byte(decryptedRequest), tokenForm)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot unmarshal request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot unmarshal request", err.Error(), w, fail2BanData)
 		return
 	}
 
 	walletIDToTokenMap := tokenForm.WalletIDToTokenMap
 	localIps := tokenForm.LocalIps
 	remoteIps := tokenForm.RemoteIps
+
+	_, isWallet := wallets[generatorID]
+
+	if isWallet == true {
+		if config.GeneratorsPolicy == "2fa" {
+			jsonutils.EncodeResponse("400", "Wallets are not permitted with this policy", "Wallets are not permitted with this policy", w, fail2BanData)
+			return
+		}
+
+		err = saveTokensForWallet(ip, walletIDToTokenMap, generatorID)
+
+		if err != nil {
+			log.Println(err.Error())
+			jsonutils.EncodeResponse("400", "Can not write tokens to data storage", err.Error(), w, fail2BanData)
+			return
+		} else {
+			walletPublicKey, err := cryptoStorage.RetrievePublicKey(generatorID)
+			if err != nil {
+				log.Println(err.Error())
+				jsonutils.EncodeResponse("400", "Wallet public key cannot be retrieved", err.Error(), w, fail2BanData)
+				return
+			}
+
+			identityProviderID := component.ComponentIdentificatorID
+			privateKeyPEM := component.ComponentPrivateKey
+			publicKeyPEM := component.ComponentPublicKey
+
+			signedResponse, err := jsonutils.SignAndEncryptResponse(map[string]string{}, identityProviderID,
+				privateKeyPEM, publicKeyPEM, walletPublicKey, false)
+
+			if err != nil {
+				log.Println(err.Error())
+				jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w, fail2BanData)
+				return
+			}
+
+			jsonutils.EncodeResponse("200", "OK", signedResponse, w, fail2BanData)
+			return
+		}
+	}
+
+	log.Println("Storing ip: " + ip)
+
+	saveRemoteIP(ip, generatorID)
 
 	for walletID, ips := range remoteIps {
 		for _, ip := range ips {
@@ -268,14 +354,14 @@ func SaveTokens(w http.ResponseWriter, r *http.Request) {
 		err = dataStorage.SetKey(component.TOKENS, generatorID+"/"+walletID+"/"+token, token, config.TokenTTL*time.Second)
 		if err != nil {
 			log.Println(err.Error())
-			jsonutils.EncodeResponse("400", "Cannot write token to datastorage", err.Error(), w)
+			jsonutils.EncodeResponse("400", "Cannot write token to datastorage", err.Error(), w, fail2BanData)
 			return
 		}
 
 		err = dataStorage.SetKey(component.TOKENS, walletID+"/"+generatorID+"/"+token, token, config.TokenTTL*time.Second)
 		if err != nil {
 			log.Println(err.Error())
-			jsonutils.EncodeResponse("400", "Cannot write token to datastorage", err.Error(), w)
+			jsonutils.EncodeResponse("400", "Cannot write token to datastorage", err.Error(), w, fail2BanData)
 			return
 		}
 	}
@@ -283,7 +369,7 @@ func SaveTokens(w http.ResponseWriter, r *http.Request) {
 	generatorPublicKey, err := cryptoStorage.RetrievePublicKey(generatorID)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Generator public key cannot be retrieved", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Generator public key cannot be retrieved", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -296,18 +382,26 @@ func SaveTokens(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w, fail2BanData)
 		return
 	}
 
-	jsonutils.EncodeResponse("200", "OK", signedResponse, w)
+	jsonutils.EncodeResponse("200", "OK", signedResponse, w, fail2BanData)
 }
 
 func ListPublicKeysForIdentificator(w http.ResponseWriter, r *http.Request) {
+	fail2banDataStorage := component.CreateFail2BanDataStorage()
+
+	fail2BanData := &utils.Fail2BanData{
+		DataStorage:   fail2banDataStorage,
+		RemoteAddress: networkutils.GetRemoteAddress(r),
+		TTL:           config.Fail2BanTTL,
+	}
+
 	request, err := jsonutils.ParseRequest(r)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -319,21 +413,21 @@ func ListPublicKeysForIdentificator(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w, fail2BanData)
 		return
 	}
 
 	identificators, err := cryptoStorage.GetIdentificators()
 
 	if err != nil {
-		jsonutils.EncodeResponse("400", "Cannot get identificators", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get identificators", err.Error(), w, fail2BanData)
 		return
 	}
 
 	identificator, ok := identificators[clientID]
 
 	if ok == false {
-		jsonutils.EncodeResponse("400", "No such identificator", "No such identificator", w)
+		jsonutils.EncodeResponse("400", "No such identificator", "No such identificator", w, fail2BanData)
 		return
 	}
 
@@ -341,7 +435,7 @@ func ListPublicKeysForIdentificator(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot get public key", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get public key", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -349,7 +443,7 @@ func ListPublicKeysForIdentificator(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot get generators", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get generators", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -357,7 +451,7 @@ func ListPublicKeysForIdentificator(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot get openers", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get openers", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -365,7 +459,7 @@ func ListPublicKeysForIdentificator(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot get wallets", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get wallets", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -394,7 +488,7 @@ func ListPublicKeysForIdentificator(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			log.Println(err.Error())
-			jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w)
+			jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w, fail2BanData)
 			return
 		}
 
@@ -406,18 +500,82 @@ func ListPublicKeysForIdentificator(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w, fail2BanData)
 		return
 	}
 
-	jsonutils.EncodeResponse("200", "OK", signedResponse, w)
+	jsonutils.EncodeResponse("200", "OK", signedResponse, w, fail2BanData)
 }
 
-func ListGeneratorIPs(w http.ResponseWriter, r *http.Request) {
+func ListCapabilities(w http.ResponseWriter, r *http.Request) {
+	fail2banDataStorage := component.CreateFail2BanDataStorage()
+
+	fail2BanData := &utils.Fail2BanData{
+		DataStorage:   fail2banDataStorage,
+		RemoteAddress: networkutils.GetRemoteAddress(r),
+		TTL:           config.Fail2BanTTL,
+	}
+
 	request, err := jsonutils.ParseRequest(r)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w, fail2BanData)
+		return
+	}
+
+	cryptoStorage := component.CreateCryptoStorage()
+
+	_, clientID, err := jsonutils.VerifyAndDecrypt(request, component.ComponentPrivateKey, cryptoStorage)
+
+	//fmt.Println("ClientID: " + clientID)
+
+	if err != nil {
+		log.Println(err.Error())
+		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w, fail2BanData)
+		return
+	}
+
+	clientPublicKey, err := cryptoStorage.RetrievePublicKey(clientID)
+
+	if err != nil {
+		log.Println(err.Error())
+		jsonutils.EncodeResponse("400", "Cannot get public key", err.Error(), w, fail2BanData)
+		return
+	}
+
+	identityProviderID := component.ComponentIdentificatorID
+	privateKeyPEM := component.ComponentPrivateKey
+	publicKeyPEM := component.ComponentPublicKey
+
+	response := map[string]string{}
+
+	response["generatorspolicy"] = config.GeneratorsPolicy
+
+	signedResponse, err := jsonutils.SignAndEncryptResponse(response, identityProviderID,
+		privateKeyPEM, publicKeyPEM, clientPublicKey, false)
+
+	if err != nil {
+		log.Println(err.Error())
+		jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w, fail2BanData)
+		return
+	}
+
+	jsonutils.EncodeResponse("200", "OK", signedResponse, w, fail2BanData)
+}
+
+func ListGeneratorIPs(w http.ResponseWriter, r *http.Request) {
+	fail2banDataStorage := component.CreateFail2BanDataStorage()
+
+	fail2BanData := &utils.Fail2BanData{
+		DataStorage:   fail2banDataStorage,
+		RemoteAddress: networkutils.GetRemoteAddress(r),
+		TTL:           config.Fail2BanTTL,
+	}
+
+	request, err := jsonutils.ParseRequest(r)
+	if err != nil {
+		log.Println(err.Error())
+		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -426,7 +584,7 @@ func ListGeneratorIPs(w http.ResponseWriter, r *http.Request) {
 	_, clientID, err := jsonutils.VerifyAndDecrypt(request, component.ComponentPrivateKey, cryptoStorage)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -434,7 +592,7 @@ func ListGeneratorIPs(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot get public key", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get public key", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -442,7 +600,7 @@ func ListGeneratorIPs(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot get local ips", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get local ips", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -451,18 +609,26 @@ func ListGeneratorIPs(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w, fail2BanData)
 		return
 	}
 
-	jsonutils.EncodeResponse("200", "OK", signedResponse, w)
+	jsonutils.EncodeResponse("200", "OK", signedResponse, w, fail2BanData)
 }
 
 func ListServicesForWallet(w http.ResponseWriter, r *http.Request) {
+	fail2banDataStorage := component.CreateFail2BanDataStorage()
+
+	fail2BanData := &utils.Fail2BanData{
+		DataStorage:   fail2banDataStorage,
+		RemoteAddress: networkutils.GetRemoteAddress(r),
+		TTL:           config.Fail2BanTTL,
+	}
+
 	request, err := jsonutils.ParseRequest(r)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -471,7 +637,7 @@ func ListServicesForWallet(w http.ResponseWriter, r *http.Request) {
 	_, clientID, err := jsonutils.VerifyAndDecrypt(request, component.ComponentPrivateKey, cryptoStorage)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -479,7 +645,7 @@ func ListServicesForWallet(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot get public key", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get public key", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -487,7 +653,7 @@ func ListServicesForWallet(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot get public key", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get public key", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -495,7 +661,7 @@ func ListServicesForWallet(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot get services for user", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get services for user", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -504,11 +670,11 @@ func ListServicesForWallet(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w, fail2BanData)
 		return
 	}
 
-	jsonutils.EncodeResponse("200", "OK", signedResponse, w)
+	jsonutils.EncodeResponse("200", "OK", signedResponse, w, fail2BanData)
 }
 
 type WalletsAndServices struct {
@@ -517,10 +683,18 @@ type WalletsAndServices struct {
 }
 
 func GetWalletsAndServices(w http.ResponseWriter, r *http.Request) {
+	fail2banDataStorage := component.CreateFail2BanDataStorage()
+
+	fail2BanData := &utils.Fail2BanData{
+		DataStorage:   fail2banDataStorage,
+		RemoteAddress: networkutils.GetRemoteAddress(r),
+		TTL:           config.Fail2BanTTL,
+	}
+
 	request, err := jsonutils.ParseRequest(r)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -529,7 +703,7 @@ func GetWalletsAndServices(w http.ResponseWriter, r *http.Request) {
 	_, clientID, err := jsonutils.VerifyAndDecrypt(request, component.ComponentPrivateKey, cryptoStorage)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -537,7 +711,7 @@ func GetWalletsAndServices(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot get public key", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get public key", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -545,7 +719,7 @@ func GetWalletsAndServices(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot get wallets", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get wallets", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -557,7 +731,7 @@ func GetWalletsAndServices(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			log.Println(err.Error())
-			jsonutils.EncodeResponse("400", "Cannot get user ID", err.Error(), w)
+			jsonutils.EncodeResponse("400", "Cannot get user ID", err.Error(), w, fail2BanData)
 			return
 		}
 
@@ -565,7 +739,7 @@ func GetWalletsAndServices(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			log.Println(err.Error())
-			jsonutils.EncodeResponse("400", "Cannot get public key for wallet", err.Error(), w)
+			jsonutils.EncodeResponse("400", "Cannot get public key for wallet", err.Error(), w, fail2BanData)
 			return
 		}
 
@@ -573,7 +747,7 @@ func GetWalletsAndServices(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			log.Println(err.Error())
-			jsonutils.EncodeResponse("400", "Cannot list service for user", err.Error(), w)
+			jsonutils.EncodeResponse("400", "Cannot list service for user", err.Error(), w, fail2BanData)
 			return
 		}
 
@@ -591,18 +765,26 @@ func GetWalletsAndServices(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w, fail2BanData)
 		return
 	}
 
-	jsonutils.EncodeResponse("200", "OK", signedResponse, w)
+	jsonutils.EncodeResponse("200", "OK", signedResponse, w, fail2BanData)
 }
 
 func GetActiveTokens(w http.ResponseWriter, r *http.Request) {
+	fail2banDataStorage := component.CreateFail2BanDataStorage()
+
+	fail2BanData := &utils.Fail2BanData{
+		DataStorage:   fail2banDataStorage,
+		RemoteAddress: networkutils.GetRemoteAddress(r),
+		TTL:           config.Fail2BanTTL,
+	}
+
 	request, err := jsonutils.ParseRequest(r)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -611,7 +793,7 @@ func GetActiveTokens(w http.ResponseWriter, r *http.Request) {
 	_, clientID, err := jsonutils.VerifyAndDecrypt(request, component.ComponentPrivateKey, cryptoStorage)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -619,7 +801,7 @@ func GetActiveTokens(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot get public key", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get public key", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -627,7 +809,7 @@ func GetActiveTokens(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot get wallets", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get wallets", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -640,7 +822,7 @@ func GetActiveTokens(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			log.Println(err.Error())
-			jsonutils.EncodeResponse("400", "Cannot get tokens", err.Error(), w)
+			jsonutils.EncodeResponse("400", "Cannot get tokens", err.Error(), w, fail2BanData)
 			return
 		}
 
@@ -664,9 +846,9 @@ func GetActiveTokens(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w, fail2BanData)
 		return
 	}
 
-	jsonutils.EncodeResponse("200", "OK", signedResponse, w)
+	jsonutils.EncodeResponse("200", "OK", signedResponse, w, fail2BanData)
 }

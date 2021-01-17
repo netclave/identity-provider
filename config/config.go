@@ -37,6 +37,10 @@ var IdentityStorageCredentials map[string]string
 var IdentityStorageType string
 var IdentityProviderType string
 
+var Fail2BanDataStorageCredentials map[string]string
+var Fail2BanStorageType string
+var Fail2BanTTL int64
+
 var TwilioAccount = ""
 var TwilioSecret = ""
 var TwilioPhone = ""
@@ -50,6 +54,8 @@ var SMTPPort = ""
 var ListenHTTPAddressForOpeners = "localhost:9090"
 var ListenHTTPAddress = "localhost:8080"
 var ListenGRPCAddress = "localhost:6668"
+
+var GeneratorsPolicy = ""
 
 var TokenTTL = time.Duration(300)
 var SendConfirmationCode = false
@@ -97,6 +103,15 @@ func Init() error {
 	viper.SetDefault("identitysource.type", identity.DATA_STORAGE_PROVIDER)
 	viper.SetDefault("identitysource.datastoragetype", storage.REDIS_STORAGE)
 
+	viper.SetDefault("fail2bandatastorage.credentials", map[string]string{
+		"host":     "localhost:6379",
+		"db":       "5",
+		"password": "",
+	})
+	viper.SetDefault("fail2bandatastorage.type", storage.REDIS_STORAGE)
+
+	viper.SetDefault("fail2banttl", int64(300000))
+
 	viper.SetDefault("smtp.supportemail", "")
 	viper.SetDefault("smtp.smtphost", "")
 	viper.SetDefault("smtp.smtpusername", "")
@@ -107,6 +122,7 @@ func Init() error {
 	viper.SetDefault("twilio.secret", "")
 	viper.SetDefault("twilio.phone", "")
 
+	viper.SetDefault("generatorspolicy", "2fa")
 	viper.SetDefault("sendconfirmationcode", false)
 
 	hostConfig := viper.Sub("host")
@@ -132,6 +148,13 @@ func Init() error {
 
 	log.Println(IdentityStorageType)
 
+	fail2banDatastorageConfig := viper.Sub("fail2bandatastorage")
+
+	Fail2BanDataStorageCredentials = fail2banDatastorageConfig.GetStringMapString("credentials")
+	Fail2BanStorageType = fail2banDatastorageConfig.GetString("type")
+
+	Fail2BanTTL = viper.GetInt64("fail2banttl")
+
 	smtpConfig := viper.Sub("smtp")
 
 	SupportEmail = smtpConfig.GetString("supportemail")
@@ -146,6 +169,7 @@ func Init() error {
 	TwilioSecret = twilioConfig.GetString("secret")
 	TwilioPhone = twilioConfig.GetString("phone")
 
+	GeneratorsPolicy = viper.GetString("generatorspolicy")
 	SendConfirmationCode = viper.GetBool("sendconfirmationcode")
 
 	return nil

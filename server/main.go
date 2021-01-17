@@ -22,8 +22,10 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"time"
 
 	api "github.com/netclave/apis/identity-provider/api"
+	"github.com/netclave/common/utils"
 	"github.com/netclave/identity-provider/component"
 	"github.com/netclave/identity-provider/config"
 	"github.com/netclave/identity-provider/handlers"
@@ -63,6 +65,23 @@ func startGRPCServer(address string) error {
 	return nil
 }
 
+func startFail2BanDeamon() error {
+	for {
+		fail2banDataStorage := component.CreateFail2BanDataStorage()
+
+		err := utils.LogBannedIPs(fail2banDataStorage)
+
+		if err != nil {
+			log.Println(err.Error())
+			return err
+		}
+
+		time.Sleep(2 * time.Second)
+	}
+
+	return nil
+}
+
 func main() {
 	err := component.LoadComponent()
 	if err != nil {
@@ -85,6 +104,14 @@ func main() {
 		err = startGRPCServer(config.ListenGRPCAddress)
 	}()
 
+	go func() {
+		err := startFail2BanDeamon()
+
+		if err != nil {
+			log.Println(err.Error())
+		}
+	}()
+
 	http.HandleFunc("/listGeneratorIPs", handlers.ListGeneratorIPs)
 	http.HandleFunc("/getPublicKey", handlers.GetPublicKey)
 	http.HandleFunc("/registerPublicKey", handlers.RegisterPublicKey)
@@ -94,6 +121,7 @@ func main() {
 	http.HandleFunc("/saveTokens", handlers.SaveTokens)
 	http.HandleFunc("/listPublicKeysForIdentificator", handlers.ListPublicKeysForIdentificator)
 	http.HandleFunc("/listServicesForWallet", handlers.ListServicesForWallet)
+	http.HandleFunc("/listCapabilities", handlers.ListCapabilities)
 
 	if err := http.ListenAndServe(config.ListenHTTPAddress, nil); err != nil {
 		panic(err)

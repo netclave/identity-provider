@@ -23,7 +23,10 @@ import (
 	"strings"
 
 	"github.com/netclave/common/jsonutils"
+	"github.com/netclave/common/networkutils"
+	"github.com/netclave/common/utils"
 	"github.com/netclave/identity-provider/component"
+	"github.com/netclave/identity-provider/config"
 	"github.com/netclave/identity-provider/identityutils"
 )
 
@@ -34,10 +37,18 @@ type IPPortProtocols struct {
 }
 
 func ListOpenerIPs(w http.ResponseWriter, r *http.Request) {
+	fail2banDataStorage := component.CreateFail2BanDataStorage()
+
+	fail2BanData := &utils.Fail2BanData{
+		DataStorage:   fail2banDataStorage,
+		RemoteAddress: networkutils.GetRemoteAddress(r),
+		TTL:           config.Fail2BanTTL,
+	}
+
 	request, err := jsonutils.ParseRequest(r)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot parse request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -46,7 +57,7 @@ func ListOpenerIPs(w http.ResponseWriter, r *http.Request) {
 	_, clientID, err := jsonutils.VerifyAndDecrypt(request, component.ComponentPrivateKey, cryptoStorage)
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot verify or decrypt request", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -54,7 +65,7 @@ func ListOpenerIPs(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot get public key", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get public key", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -64,7 +75,7 @@ func ListOpenerIPs(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot get keys", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot get keys", err.Error(), w, fail2BanData)
 		return
 	}
 
@@ -75,7 +86,7 @@ func ListOpenerIPs(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			log.Println(err.Error())
-			jsonutils.EncodeResponse("400", "Cannot get protocols", err.Error(), w)
+			jsonutils.EncodeResponse("400", "Cannot get protocols", err.Error(), w, fail2BanData)
 			return
 		}
 
@@ -89,7 +100,7 @@ func ListOpenerIPs(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			log.Println(err.Error())
-			jsonutils.EncodeResponse("400", "Cannot get ips for user", err.Error(), w)
+			jsonutils.EncodeResponse("400", "Cannot get ips for user", err.Error(), w, fail2BanData)
 			return
 		}
 
@@ -109,9 +120,9 @@ func ListOpenerIPs(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err.Error())
-		jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Cannot encrypt response", err.Error(), w, fail2BanData)
 		return
 	}
 
-	jsonutils.EncodeResponse("200", "OK", signedResponse, w)
+	jsonutils.EncodeResponse("200", "OK", signedResponse, w, fail2BanData)
 }

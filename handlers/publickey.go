@@ -20,7 +20,10 @@ import (
 	"net/http"
 
 	"github.com/netclave/common/jsonutils"
+	"github.com/netclave/common/networkutils"
+	"github.com/netclave/common/utils"
 	"github.com/netclave/identity-provider/component"
+	"github.com/netclave/identity-provider/config"
 )
 
 type GetPublicKeyForm struct {
@@ -31,13 +34,21 @@ func GetPublicKey(w http.ResponseWriter, r *http.Request) {
 	privateKeyPEM := component.ComponentPrivateKey
 	publicKeyPEM := component.ComponentPublicKey
 
+	fail2banDataStorage := component.CreateFail2BanDataStorage()
+
+	fail2BanData := &utils.Fail2BanData{
+		DataStorage:   fail2banDataStorage,
+		RemoteAddress: networkutils.GetRemoteAddress(r),
+		TTL:           config.Fail2BanTTL,
+	}
+
 	signedResponse, err := jsonutils.SignAndEncryptResponse("", identityProviderID,
 		privateKeyPEM, publicKeyPEM, "", true)
 
 	if err != nil {
-		jsonutils.EncodeResponse("400", "Can not sign response", err.Error(), w)
+		jsonutils.EncodeResponse("400", "Can not sign response", err.Error(), w, fail2BanData)
 		return
 	}
 
-	jsonutils.EncodeResponse("200", "OK", signedResponse, w)
+	jsonutils.EncodeResponse("200", "OK", signedResponse, w, fail2BanData)
 }
